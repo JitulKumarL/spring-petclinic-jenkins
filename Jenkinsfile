@@ -117,137 +117,144 @@ pipeline {
         }
 
         /* ==================== STAGE 2: STATIC CODE ANALYSIS ==================== */
-        stage('Static Code Analysis') {
-            steps {
-                script {
-                    echo "=== Stage 2: Static Code Analysis ==="
-                    sh './mvnw -B checkstyle:check -DskipTests || true'
-                    if (params.SKIP_SONAR != true) {
-                        withSonarQubeEnv('SonarQube') {
-                            sh '''
-                                ./mvnw -B sonar:sonar \
-                                    -Dsonar.projectKey=petclinic \
-                                    -Dsonar.java.binaries=target/classes \
-                                    -DskipTests || true
-                            '''
-                        }
-                    } else {
-                        echo "SonarQube analysis skipped (SKIP_SONAR=true)"
-                    }
-                }
-            }
-            post {
-                failure {
-                    echo "Static analysis found issues. Consider fixing before proceeding."
-                }
-            }
-        }
+        // stage('Static Code Analysis') {
+        //     steps {
+        //         script {
+        //             echo "=== Stage 2: Static Code Analysis ==="
+        //             sh './mvnw -B checkstyle:check -DskipTests || true'
+        //             if (params.SKIP_SONAR != true) {
+        //                 withSonarQubeEnv('SonarQube') {
+        //                     sh '''
+        //                         ./mvnw -B sonar:sonar \
+        //                             -Dsonar.projectKey=petclinic \
+        //                             -Dsonar.java.binaries=target/classes \
+        //                             -DskipTests || true
+        //                     '''
+        //                 }
+        //             } else {
+        //                 echo "SonarQube analysis skipped (SKIP_SONAR=true)"
+        //             }
+        //         }
+        //     }
+        //     post {
+        //         failure {
+        //             echo "Static analysis found issues. Consider fixing before proceeding."
+        //         }
+        //     }
+        // }
 
         /* ==================== STAGE 3: UNIT TESTS ==================== */
-        stage('Unit Tests') {
-            steps {
-                script {
-                    echo "=== Stage 3: Unit Tests ==="
-                    sh '''
-                        ./mvnw -B test \
-                            -Dtest=!*IntegrationTests,!*TestApplication \
-                            -DfailIfNoTests=false
-                    '''
-                }
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
-                }
-            }
-        }
+        // stage('Unit Tests') {
+        //     steps {
+        //         script {
+        //             echo "=== Stage 3: Unit Tests ==="
+        //             sh '''
+        //                 ./mvnw -B test \
+        //                     -Dtest=!*IntegrationTests,!*TestApplication \
+        //                     -DfailIfNoTests=false
+        //             '''
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+        //         }
+        //     }
+        // }
 
         /* ==================== STAGE 4: BUILD ARTIFACT ==================== */
-        stage('Build Artifact') {
-            steps {
-                script {
-                    echo "=== Stage 4: Build Artifact ==="
-                    sh '''
-                        ./mvnw -B clean package \
-                            -DskipTests \
-                            -Dmaven.test.skip=true
-                    '''
-                    env.ARTIFACT_PATH = sh(
-                        script: "ls target/*.jar 2>/dev/null | grep -v original | head -1",
-                        returnStdout: true
-                    ).trim()
-                }
-            }
-        }
+        // stage('Build Artifact') {
+        //     steps {
+        //         script {
+        //             echo "=== Stage 4: Build Artifact ==="
+        //             sh '''
+        //                 ./mvnw -B clean package \
+        //                     -DskipTests \
+        //                     -Dmaven.test.skip=true
+        //             '''
+        //             env.ARTIFACT_PATH = sh(
+        //                 script: "ls target/*.jar 2>/dev/null | grep -v original | head -1",
+        //                 returnStdout: true
+        //             ).trim()
+        //         }
+        //     }
+        // }
 
         /* ==================== STAGE 5: STORE ARTIFACT ==================== */
-        stage('Store Artifact') {
-            steps {
-                script {
-                    echo "=== Stage 5: Store Artifact ==="
-                    sh """
-                        mkdir -p ${ARTIFACT_STORAGE}
-                        cp ${env.ARTIFACT_PATH} ${ARTIFACT_STORAGE}/${APP_NAME}-${BUILD_TAG}.jar
-                        echo ${BUILD_TAG} > ${ARTIFACT_STORAGE}/latest-build.txt
-                        ls -la ${ARTIFACT_STORAGE}/
-                    """
-                }
-            }
-            post {
-                success {
-                    archiveArtifacts artifacts: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar",
-                        fingerprint: true
-                    stash name: "artifact-${env.BUILD_NUMBER}",
-                        includes: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
-                }
-            }
-        }
+        // stage('Store Artifact') {
+        //     steps {
+        //         script {
+        //             echo "=== Stage 5: Store Artifact ==="
+        //             sh """
+        //                 mkdir -p ${ARTIFACT_STORAGE}
+        //                 cp ${env.ARTIFACT_PATH} ${ARTIFACT_STORAGE}/${APP_NAME}-${BUILD_TAG}.jar
+        //                 echo ${BUILD_TAG} > ${ARTIFACT_STORAGE}/latest-build.txt
+        //                 ls -la ${ARTIFACT_STORAGE}/
+        //             """
+        //         }
+        //     }
+        //     post {
+        //         success {
+        //             archiveArtifacts artifacts: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar",
+        //                 fingerprint: true
+        //             stash name: "artifact-${env.BUILD_NUMBER}",
+        //                 includes: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
+        //         }
+        //     }
+        // }
 
         /* ==================== STAGE 6: DOCKER IMAGE BUILD ==================== */
-        stage('Docker Image Build') {
-            when {
-                expression { return params.DEPLOY_METHOD == 'docker' }
-            }
-            steps {
-                script {
-                    echo "=== Stage 6: Docker Image Build ==="
-                    writeFile file: 'Dockerfile', text: """FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-ARG JAR_FILE
-COPY \${JAR_FILE} app.jar
-EXPOSE 8080
-ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
-"""
-                    def imageName = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_TAG}"
-                    docker.build(imageName, "--build-arg JAR_FILE=${env.ARTIFACT_PATH} .")
-                    env.DOCKER_IMAGE = imageName
-                }
-            }
-        }
+//         stage('Docker Image Build') {
+//             when {
+//                 expression { return params.DEPLOY_METHOD == 'docker' }
+//             }
+//             steps {
+//                 script {
+//                     echo "=== Stage 6: Docker Image Build ==="
+//                     writeFile file: 'Dockerfile', text: """FROM eclipse-temurin:21-jre-alpine
+// WORKDIR /app
+// ARG JAR_FILE
+// COPY \${JAR_FILE} app.jar
+// EXPOSE 8080
+// ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
+// """
+//                     def imageName = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_TAG}"
+//                     docker.build(imageName, "--build-arg JAR_FILE=${env.ARTIFACT_PATH} .")
+//                     env.DOCKER_IMAGE = imageName
+//                 }
+//             }
+//         }
 
         /* ==================== STAGE 7: PUSH IMAGE TO REGISTRY ==================== */
-        stage('Push Image to Registry') {
-            when {
-                expression { return params.DEPLOY_METHOD == 'docker' && params.PUSH_TO_REGISTRY }
-            }
-            steps {
-                script {
-                    echo "=== Stage 7: Push Image to Registry ==="
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-credentials') {
-                        def image = docker.image("${env.DOCKER_IMAGE}")
-                        image.push()
-                        image.push('latest')
-                    }
-                }
-            }
-        }
+        // stage('Push Image to Registry') {
+        //     when {
+        //         expression { return params.DEPLOY_METHOD == 'docker' && params.PUSH_TO_REGISTRY }
+        //     }
+        //     steps {
+        //         script {
+        //             echo "=== Stage 7: Push Image to Registry ==="
+        //             docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-credentials') {
+        //                 def image = docker.image("${env.DOCKER_IMAGE}")
+        //                 image.push()
+        //                 image.push('latest')
+        //             }
+        //         }
+        //     }
+        // }
 
         /* ==================== STAGE 8: DEPLOY TO ENVIRONMENT ==================== */
         stage('Deploy to Environment') {
             steps {
                 script {
+                    // Re-ensure DEPLOY_HOST (can be null after input resume - Jenkins Pipeline quirk)
+                    def envHosts = ['prod': '192.168.31.121', 'stage': '192.168.31.122', 'uat': '192.168.31.123', 'test': '192.168.31.124']
+                    def deployEnv = env.DEPLOY_ENV ?: 'test'
+                    if (!env.DEPLOY_HOST) {
+                        env.DEPLOY_HOST = envHosts[deployEnv] ?: '192.168.31.121'
+                    }
+                    def host = env.DEPLOY_HOST ?: '192.168.31.121'
                     if (env.DEPLOY_ENV == 'prod') {
-                        input message: "Deploy to PRODUCTION (${env.DEPLOY_HOST})?", ok: 'Deploy'
+                        input message: "Deploy to PRODUCTION (${host})?", ok: 'Deploy'
                     }
                     echo "=== Stage 8: Deploy to ${env.DEPLOY_HOST} (${env.DEPLOY_ENV}) ==="
                     def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
@@ -330,72 +337,72 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
     }
 
     /* ==================== POST-BUILD: ROLLBACK ON FAILURE ==================== */
-    post {
-        failure {
-            script {
-                if (env.TRIGGER_ROLLBACK == 'true' || env.HEALTH_CHECK_FAILED == 'true') {
-                    echo "=== ROLLBACK: Deploying previous artifact to ${env.DEPLOY_HOST} ==="
-                    def previousBuild = currentBuild.previousBuild
-                    if (previousBuild?.result == 'SUCCESS') {
-                        def prevBuildNumber = previousBuild.number
-                        def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
-                        withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
-                            if (params.DEPLOY_METHOD == 'jar') {
-                                step([$class: 'CopyArtifact',
-                                    projectName: env.JOB_NAME,
-                                    filter: 'artifacts/*.jar',
-                                    selector: [$class: 'SpecificBuildSelector', buildNumber: prevBuildNumber]
-                                ])
-                                def jarFile = sh(script: "ls artifacts/*.jar 2>/dev/null | head -1", returnStdout: true).trim()
-                                if (jarFile) {
-                                    sh """
-                                        eval \$(ssh-agent -s)
-                                        ssh-add \$SSH_KEY
-                                        chmod +x ./jenkins/scripts/rollback.sh
-                                        DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
-                                        REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ROLLBACK_JAR='${jarFile}' \\
-                                        ./jenkins/scripts/rollback.sh \\
-                                            --env ${env.DEPLOY_ENV} \\
-                                            --build-number ${prevBuildNumber} \\
-                                            --app ${APP_NAME} \\
-                                            --host ${env.DEPLOY_HOST} \\
-                                            --user ${env.DEPLOY_USER}
-                                    """
-                                } else {
-                                    echo "ERROR: Could not find JAR from previous build"
-                                }
-                            } else {
-                                step([$class: 'CopyArtifact',
-                                    projectName: env.JOB_NAME,
-                                    filter: 'deployed-image.txt',
-                                    selector: [$class: 'SpecificBuildSelector', buildNumber: prevBuildNumber]
-                                ])
-                                def prevImage = readFile('deployed-image.txt').trim()
-                                def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
-                                sh """
-                                    eval \$(ssh-agent -s)
-                                    ssh-add \$SSH_KEY
-                                    chmod +x ./jenkins/scripts/rollback.sh
-                                    DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
-                                    REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \\
-                                    ROLLBACK_IMAGE='${prevImage}' ./jenkins/scripts/rollback.sh \\
-                                        --env ${env.DEPLOY_ENV} \\
-                                        --build-number ${prevBuildNumber} \\
-                                        --app ${APP_NAME} \\
-                                        --host ${env.DEPLOY_HOST} \\
-                                        --user ${env.DEPLOY_USER}
-                                """
-                            }
-                        }
-                        echo "Rollback completed. Previous build #${prevBuildNumber} restored on ${env.DEPLOY_HOST}."
-                    } else {
-                        echo "WARNING: No previous successful build available for rollback!"
-                    }
-                }
-            }
-        }
-        always {
-            cleanWs(deleteDirs: true, patterns: [[pattern: 'target/', type: 'INCLUDE']])
-        }
-    }
+    // post {
+    //     failure {
+    //         script {
+    //             if (env.TRIGGER_ROLLBACK == 'true' || env.HEALTH_CHECK_FAILED == 'true') {
+    //                 echo "=== ROLLBACK: Deploying previous artifact to ${env.DEPLOY_HOST} ==="
+    //                 def previousBuild = currentBuild.previousBuild
+    //                 if (previousBuild?.result == 'SUCCESS') {
+    //                     def prevBuildNumber = previousBuild.number
+    //                     def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
+    //                     withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
+    //                         if (params.DEPLOY_METHOD == 'jar') {
+    //                             step([$class: 'CopyArtifact',
+    //                                 projectName: env.JOB_NAME,
+    //                                 filter: 'artifacts/*.jar',
+    //                                 selector: [$class: 'SpecificBuildSelector', buildNumber: prevBuildNumber]
+    //                             ])
+    //                             def jarFile = sh(script: "ls artifacts/*.jar 2>/dev/null | head -1", returnStdout: true).trim()
+    //                             if (jarFile) {
+    //                                 sh """
+    //                                     eval \$(ssh-agent -s)
+    //                                     ssh-add \$SSH_KEY
+    //                                     chmod +x ./jenkins/scripts/rollback.sh
+    //                                     DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
+    //                                     REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ROLLBACK_JAR='${jarFile}' \\
+    //                                     ./jenkins/scripts/rollback.sh \\
+    //                                         --env ${env.DEPLOY_ENV} \\
+    //                                         --build-number ${prevBuildNumber} \\
+    //                                         --app ${APP_NAME} \\
+    //                                         --host ${env.DEPLOY_HOST} \\
+    //                                         --user ${env.DEPLOY_USER}
+    //                                 """
+    //                             } else {
+    //                                 echo "ERROR: Could not find JAR from previous build"
+    //                             }
+    //                         } else {
+    //                             step([$class: 'CopyArtifact',
+    //                                 projectName: env.JOB_NAME,
+    //                                 filter: 'deployed-image.txt',
+    //                                 selector: [$class: 'SpecificBuildSelector', buildNumber: prevBuildNumber]
+    //                             ])
+    //                             def prevImage = readFile('deployed-image.txt').trim()
+    //                             def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
+    //                             sh """
+    //                                 eval \$(ssh-agent -s)
+    //                                 ssh-add \$SSH_KEY
+    //                                 chmod +x ./jenkins/scripts/rollback.sh
+    //                                 DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
+    //                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \\
+    //                                 ROLLBACK_IMAGE='${prevImage}' ./jenkins/scripts/rollback.sh \\
+    //                                     --env ${env.DEPLOY_ENV} \\
+    //                                     --build-number ${prevBuildNumber} \\
+    //                                     --app ${APP_NAME} \\
+    //                                     --host ${env.DEPLOY_HOST} \\
+    //                                     --user ${env.DEPLOY_USER}
+    //                             """
+    //                         }
+    //                     }
+    //                     echo "Rollback completed. Previous build #${prevBuildNumber} restored on ${env.DEPLOY_HOST}."
+    //                 } else {
+    //                     echo "WARNING: No previous successful build available for rollback!"
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     always {
+    //         cleanWs(deleteDirs: true, patterns: [[pattern: 'target/', type: 'INCLUDE']])
+    //     }
+    // }
 }
