@@ -262,7 +262,7 @@ pipeline {
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ./jenkins/scripts/deploy.sh \
-                                    --env ${env.DEPLOY_ENV} \
+                                    --env ${deployEnv} \
                                     --jar ${jarPath} \
                                     --app ${APP_NAME} \
                                     --host ${host} \
@@ -280,7 +280,7 @@ pipeline {
                                 DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \
                                 ./jenkins/scripts/deploy.sh \
-                                    --env ${env.DEPLOY_ENV} \
+                                    --env ${deployEnv} \
                                     --image ${env.DEPLOYED_IMAGE} \
                                     --app ${APP_NAME} \
                                     --host ${host} \

@@ -59,11 +59,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Optional: set SSH_DEBUG=1 for verbose SSH (helps diagnose connection/auth failures)
+SSH_OPTS="-o StrictHostKeyChecking=no"
+[[ "${SSH_DEBUG:-0}" == "1" ]] && SSH_OPTS="-v ${SSH_OPTS}"
+
 # SSH helper - run command on remote or locally
 run_cmd() {
     local cmd="$1"
     if [[ -n "$DEPLOY_HOST" ]]; then
-        ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "$cmd"
+        ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" "$cmd"
     else
         eval "$cmd"
     fi
@@ -73,12 +77,14 @@ run_cmd() {
 copy_to_remote() {
     local src="$1"
     local dest="$2"
-    scp -o StrictHostKeyChecking=no "$src" "${DEPLOY_USER}@${DEPLOY_HOST}:${dest}"
+    scp ${SSH_OPTS} "$src" "${DEPLOY_USER}@${DEPLOY_HOST}:${dest}"
 }
 
 echo "=== Deploying ${APP_NAME} to ${ENV} ==="
 if [[ -n "$DEPLOY_HOST" ]]; then
     echo "Target host: ${DEPLOY_USER}@${DEPLOY_HOST}"
+    echo "Testing SSH connection..."
+    run_cmd "echo 'SSH OK'" || { echo "ERROR: Cannot connect to ${DEPLOY_USER}@${DEPLOY_HOST} (check host, firewall, SSH key in authorized_keys)"; exit 255; }
 fi
 
 # Remote Docker - pull from registry (requires image pushed to registry)
@@ -133,13 +139,17 @@ deploy_remote_jar() {
         echo "Error: --jar path required and must exist for JAR deployment"
         exit 1
     fi
+    echo "Step 1/5: Creating remote directory ${REMOTE_APP_DIR}"
     run_cmd "mkdir -p ${REMOTE_APP_DIR}"
+    echo "Step 2/5: Copying JAR to ${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_APP_DIR}/app.jar"
     copy_to_remote "$JAR_PATH" "${REMOTE_APP_DIR}/app.jar"
-    # Stop existing process, start new one
+    echo "Step 3/5: Stopping existing process (if any)"
     run_cmd "pkill -f 'java.*app.jar' 2>/dev/null || true"
     run_cmd "sleep 2"
+    echo "Step 4/5: Starting application"
     run_cmd "cd ${REMOTE_APP_DIR} && nohup java -jar app.jar > app.log 2>&1 &"
     run_cmd "sleep 3"
+    echo "Step 5/5: Done"
     echo "Deployed via remote JAR to ${REMOTE_APP_DIR}"
 }
 
