@@ -3,8 +3,9 @@
  * ============================================
  * main   → prod   |  stage  → stage  |  uat  → uat  |  test/develop/dev → test
  *
- * Push to branch triggers build and deploy to that branch's environment.
- * App repo = pipeline repo (Jenkinsfile + scripts live in the app repo).
+ * Deploy server is auto-selected from branch (no inputs, no band-aids).
+ * Config: DEPLOY_CONFIG + BRANCH_TO_ENV in Environment Setup, Deploy, Smoke stages.
+ * Edit those 3 blocks together when adding hosts or changing mappings.
  *
  * Pipeline Flow:
  * Environment Setup → Checkout → Static Analysis → Unit Tests → Build → Store Artifact →
@@ -28,10 +29,8 @@ pipeline {
         ARTIFACT_STORAGE = "${WORKSPACE}/artifacts"
         APP_NAME = 'petclinic'
         HEALTH_CHECK_TIMEOUT = '120'
-        DEPLOY_HOST = ''
         DEPLOY_USER = 'deploy'
         REMOTE_APP_DIR = '/home/deploy/petclinic'
-        HEALTH_CHECK_URL = ''
         SSH_CREDENTIALS_ID = 'deploy-ssh-key'
     }
 
@@ -68,37 +67,24 @@ pipeline {
         stage('Environment Setup') {
             steps {
                 script {
-                    // Branch-to-environment mapping (Multibranch: BRANCH_NAME is set automatically)
-                    def branchToEnv = [
-                        'main': 'prod',
-                        'master': 'prod',
-                        'stage': 'stage',
-                        'uat': 'uat',
-                        'test': 'test',
-                        'develop': 'test',
-                        'dev': 'test',
+                    // Single source of truth: branch → deploy env → host (edit here only)
+                    def DEPLOY_CONFIG = [
+                        prod:  [host: '192.168.31.121', port: 8080],
+                        stage: [host: '192.168.31.122', port: 8080],
+                        uat:   [host: '192.168.31.123', port: 8080],
+                        test:  [host: '192.168.31.124', port: 8080],
                     ]
-                    def branchName = env.BRANCH_NAME ?: 'main'
-                    env.DEPLOY_ENV = branchToEnv[branchName] ?: 'test'
+                    def BRANCH_TO_ENV = [main: 'prod', master: 'prod', stage: 'stage', uat: 'uat', test: 'test', develop: 'test', dev: 'test']
 
-                    // Per-environment config: host, user, credentials, port
-                    // Single deploy VM at 192.168.31.121 (Alma Linux) — agent's SSH key must be in deploy server's authorized_keys
-                    def envConfig = [
-                        'test': [host: '192.168.31.124', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        'uat':  [host: '192.168.31.123', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        'stage':[host: '192.168.31.122', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        'prod': [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                    ]
-                    def deployEnv = env.DEPLOY_ENV ?: 'test'
-                    def cfg = envConfig[deployEnv] ?: envConfig['test']
-                    env.DEPLOY_HOST = (cfg != null && cfg.host) ? cfg.host : '192.168.31.121'
-                    env.DEPLOY_USER = (cfg != null && cfg.user) ? cfg.user : 'deploy'
-                    env.SSH_CREDENTIALS_ID = (params.SSH_CREDENTIALS_ID ?: (cfg?.creds)) ?: 'deploy-ssh-key'
-                    def host = env.DEPLOY_HOST
-                    def port = (cfg != null && cfg.port) ? cfg.port : 8080
-                    env.HEALTH_CHECK_URL = "http://${host}:${port}/actuator/health"
-                    env.REMOTE_APP_DIR = "/home/${env.DEPLOY_USER}/petclinic"
-                    echo "Branch: ${branchName} → Deploy to: ${env.DEPLOY_ENV} (${env.DEPLOY_HOST})"
+                    def branchName = env.BRANCH_NAME ?: 'main'
+                    def deployEnv = BRANCH_TO_ENV[branchName] ?: 'test'
+                    def cfg = DEPLOY_CONFIG[deployEnv] ?: DEPLOY_CONFIG.test
+
+                    env.DEPLOY_ENV = deployEnv
+                    env.DEPLOY_HOST = cfg.host
+                    env.HEALTH_CHECK_URL = "http://${cfg.host}:${cfg.port}/actuator/health"
+
+                    echo "Branch: ${branchName} → Deploy to: ${deployEnv} (${cfg.host})"
                 }
             }
         }
@@ -163,45 +149,45 @@ pipeline {
         // }
 
         /* ==================== STAGE 4: BUILD ARTIFACT ==================== */
-        // stage('Build Artifact') {
-        //     steps {
-        //         script {
-        //             echo "=== Stage 4: Build Artifact ==="
-        //             sh '''
-        //                 ./mvnw -B clean package \
-        //                     -DskipTests \
-        //                     -Dmaven.test.skip=true
-        //             '''
-        //             env.ARTIFACT_PATH = sh(
-        //                 script: "ls target/*.jar 2>/dev/null | grep -v original | head -1",
-        //                 returnStdout: true
-        //             ).trim()
-        //         }
-        //     }
-        // }
+        stage('Build Artifact') {
+            steps {
+                script {
+                    echo "=== Stage 4: Build Artifact ==="
+                    sh '''
+                        ./mvnw -B clean package \
+                            -DskipTests \
+                            -Dmaven.test.skip=true
+                    '''
+                    env.ARTIFACT_PATH = sh(
+                        script: "ls target/*.jar 2>/dev/null | grep -v original | head -1",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
 
         /* ==================== STAGE 5: STORE ARTIFACT ==================== */
-        // stage('Store Artifact') {
-        //     steps {
-        //         script {
-        //             echo "=== Stage 5: Store Artifact ==="
-        //             sh """
-        //                 mkdir -p ${ARTIFACT_STORAGE}
-        //                 cp ${env.ARTIFACT_PATH} ${ARTIFACT_STORAGE}/${APP_NAME}-${BUILD_TAG}.jar
-        //                 echo ${BUILD_TAG} > ${ARTIFACT_STORAGE}/latest-build.txt
-        //                 ls -la ${ARTIFACT_STORAGE}/
-        //             """
-        //         }
-        //     }
-        //     post {
-        //         success {
-        //             archiveArtifacts artifacts: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar",
-        //                 fingerprint: true
-        //             stash name: "artifact-${env.BUILD_NUMBER}",
-        //                 includes: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
-        //         }
-        //     }
-        // }
+        stage('Store Artifact') {
+            steps {
+                script {
+                    echo "=== Stage 5: Store Artifact ==="
+                    sh """
+                        mkdir -p ${ARTIFACT_STORAGE}
+                        cp ${env.ARTIFACT_PATH} ${ARTIFACT_STORAGE}/${APP_NAME}-${BUILD_TAG}.jar
+                        echo ${BUILD_TAG} > ${ARTIFACT_STORAGE}/latest-build.txt
+                        ls -la ${ARTIFACT_STORAGE}/
+                    """
+                }
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar",
+                        fingerprint: true
+                    stash name: "artifact-${env.BUILD_NUMBER}",
+                        includes: "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
+                }
+            }
+        }
 
         /* ==================== STAGE 6: DOCKER IMAGE BUILD ==================== */
 //         stage('Docker Image Build') {
@@ -246,19 +232,25 @@ pipeline {
         stage('Deploy to Environment') {
             steps {
                 script {
-                    // Re-ensure DEPLOY_HOST (can be null after input resume - Jenkins Pipeline quirk)
-                    def envHosts = ['prod': '192.168.31.121', 'stage': '192.168.31.122', 'uat': '192.168.31.123', 'test': '192.168.31.124']
-                    def deployEnv = env.DEPLOY_ENV ?: 'test'
-                    if (!env.DEPLOY_HOST) {
-                        env.DEPLOY_HOST = envHosts[deployEnv] ?: '192.168.31.121'
-                    }
-                    def host = env.DEPLOY_HOST ?: '192.168.31.121'
-                    if (env.DEPLOY_ENV == 'prod') {
+                    // Recompute from branch (env can be lost after input resume) — same config as Environment Setup
+                    def DEPLOY_CONFIG = [
+                        prod:  [host: '192.168.31.121', port: 8080],
+                        stage: [host: '192.168.31.122', port: 8080],
+                        uat:   [host: '192.168.31.123', port: 8080],
+                        test:  [host: '192.168.31.124', port: 8080],
+                    ]
+                    def BRANCH_TO_ENV = [main: 'prod', master: 'prod', stage: 'stage', uat: 'uat', test: 'test', develop: 'test', dev: 'test']
+
+                    def branchName = env.BRANCH_NAME ?: 'main'
+                    def deployEnv = BRANCH_TO_ENV[branchName] ?: 'test'
+                    def cfg = DEPLOY_CONFIG[deployEnv] ?: DEPLOY_CONFIG.test
+                    def host = cfg.host
+
+                    if (deployEnv == 'prod') {
                         input message: "Deploy to PRODUCTION (${host})?", ok: 'Deploy'
                     }
-                    echo "=== Stage 8: Deploy to ${env.DEPLOY_HOST} (${env.DEPLOY_ENV}) ==="
-                    def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
-                    // Uses withCredentials (built-in) instead of sshagent (requires SSH Agent plugin)
+                    echo "=== Stage 8: Deploy to ${host} (${deployEnv}) ==="
+                    def deployCreds = params.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
                     withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
                         if (params.DEPLOY_METHOD == 'jar') {
                             def jarPath = "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
@@ -268,12 +260,12 @@ pipeline {
                                 eval \$(ssh-agent -s)
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
-                                DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
+                                DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ./jenkins/scripts/deploy.sh \
                                     --env ${env.DEPLOY_ENV} \
                                     --jar ${jarPath} \
                                     --app ${APP_NAME} \
-                                    --host ${env.DEPLOY_HOST} \
+                                    --host ${host} \
                                     --user ${env.DEPLOY_USER}
                             """
                         } else {
@@ -285,13 +277,13 @@ pipeline {
                                 eval \$(ssh-agent -s)
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
-                                DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
+                                DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \
                                 ./jenkins/scripts/deploy.sh \
                                     --env ${env.DEPLOY_ENV} \
                                     --image ${env.DEPLOYED_IMAGE} \
                                     --app ${APP_NAME} \
-                                    --host ${env.DEPLOY_HOST} \
+                                    --host ${host} \
                                     --user ${env.DEPLOY_USER}
                             """
                         }
@@ -304,13 +296,26 @@ pipeline {
         stage('Smoke / Health Tests') {
             steps {
                 script {
+                    // Recompute health URL from branch (env can be lost after Deploy input)
+                    def DEPLOY_CONFIG = [
+                        prod:  [host: '192.168.31.121', port: 8080],
+                        stage: [host: '192.168.31.122', port: 8080],
+                        uat:   [host: '192.168.31.123', port: 8080],
+                        test:  [host: '192.168.31.124', port: 8080],
+                    ]
+                    def BRANCH_TO_ENV = [main: 'prod', master: 'prod', stage: 'stage', uat: 'uat', test: 'test', develop: 'test', dev: 'test']
+                    def branchName = env.BRANCH_NAME ?: 'main'
+                    def deployEnv = BRANCH_TO_ENV[branchName] ?: 'test'
+                    def cfg = DEPLOY_CONFIG[deployEnv] ?: DEPLOY_CONFIG.test
+                    def healthUrl = "http://${cfg.host}:${cfg.port}/actuator/health"
+
                     echo "=== Stage 9: Smoke / Health Tests ==="
                     def healthCheckFailed = false
                     try {
                         sh """
                             chmod +x ./jenkins/scripts/health-check.sh
                             ./jenkins/scripts/health-check.sh \
-                                --url ${env.HEALTH_CHECK_URL} \
+                                --url ${healthUrl} \
                                 --timeout ${HEALTH_CHECK_TIMEOUT} \
                                 --interval 5
                         """
