@@ -150,7 +150,7 @@ deploy_remote_jar() {
     copy_to_remote "$JAR_PATH" "${REMOTE_APP_DIR}/app.jar"
     if [[ "${SKIP_STOP_PROCESS}" != "1" ]]; then
         echo "Step 3/5: Stopping existing process (if any)"
-        run_cmd "(pid=\$(pgrep -f 'java.*app.jar' 2>/dev/null); [ -n \"\$pid\" ] && kill \$pid 2>/dev/null) || true; (fuser -k 8080/tcp 2>/dev/null) || true; sleep 2"
+        run_cmd "fuser -k 8080/tcp 2>/dev/null || true; sleep 2"
     else
         echo "Step 3/5: Skipped (--skip-stop)"
     fi

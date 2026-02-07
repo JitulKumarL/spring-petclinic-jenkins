@@ -62,8 +62,8 @@ pipeline {
         )
         booleanParam(
             name: 'SKIP_STOP_PROCESS',
-            defaultValue: true,
-            description: 'Skip stopping existing process (pkill fails over SSH; uncheck to try stop before deploy)'
+            defaultValue: false,
+            description: 'Skip stopping existing process (check if fuser step fails over SSH)'
         )
     }
 
@@ -266,7 +266,7 @@ pipeline {
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
-                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' SKIP_STOP_PROCESS=1 \
+                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' SKIP_STOP_PROCESS='${params.SKIP_STOP_PROCESS ? '1' : '0'}' \
                                 ./jenkins/scripts/deploy.sh \
                                     --env ${deployEnv} \
                                     --jar ${jarPath} \
@@ -302,7 +302,7 @@ pipeline {
         stage('Smoke / Health Tests') {
             steps {
                 script {
-                    // Recompute health URL from branch (env can be lost after Deploy input)
+                    // Recompute from branch (env can be lost after Deploy input)
                     def DEPLOY_CONFIG = [
                         prod:  [host: '192.168.31.121', port: 8080],
                         stage: [host: '192.168.31.122', port: 8080],
@@ -313,18 +313,25 @@ pipeline {
                     def branchName = env.BRANCH_NAME ?: 'main'
                     def deployEnv = BRANCH_TO_ENV[branchName] ?: 'test'
                     def cfg = DEPLOY_CONFIG[deployEnv] ?: DEPLOY_CONFIG.test
-                    def healthUrl = "http://${cfg.host}:${cfg.port}/actuator/health"
+                    def healthUrlLocal = "http://localhost:${cfg.port}/actuator/health"
 
                     echo "=== Stage 9: Smoke / Health Tests ==="
                     def healthCheckFailed = false
                     try {
-                        sh """
-                            chmod +x ./jenkins/scripts/health-check.sh
-                            ./jenkins/scripts/health-check.sh \
-                                --url ${healthUrl} \
-                                --timeout ${HEALTH_CHECK_TIMEOUT} \
-                                --interval 5
-                        """
+                        // Run health check via SSH (agent may not reach deploy server port 8080)
+                        def deployCreds = params.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
+                        withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
+                            sh """
+                                eval \$(ssh-agent -s)
+                                ssh-add \$SSH_KEY
+                                chmod +x ./jenkins/scripts/health-check.sh
+                                ./jenkins/scripts/health-check.sh \
+                                    --url ${healthUrlLocal} \
+                                    --timeout ${HEALTH_CHECK_TIMEOUT} \
+                                    --interval 5 \
+                                    --via-ssh deploy@${cfg.host}
+                            """
+                        }
                         if (params.FORCE_ROLLBACK_TEST == true) {
                             healthCheckFailed = true
                             error("Simulated health check failure for rollback test")
