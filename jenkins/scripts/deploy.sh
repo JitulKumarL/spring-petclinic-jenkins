@@ -155,7 +155,7 @@ deploy_remote_jar() {
         echo "Step 3/5: Skipped (--skip-stop)"
     fi
     echo "Step 4/5: Starting application"
-    run_cmd "cd ${REMOTE_APP_DIR} && nohup java -jar app.jar > app.log 2>&1 &"
+    run_cmd "cd ${REMOTE_APP_DIR} && (nohup java -jar app.jar </dev/null > app.log 2>&1 &)"
     run_cmd "sleep 3"
     echo "Step 5/5: Done"
     echo "Deployed via remote JAR to ${REMOTE_APP_DIR}"
