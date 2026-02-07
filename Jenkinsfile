@@ -258,7 +258,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                             writeFile file: 'deployed-jar.txt', text: jarPath
                             archiveArtifacts artifacts: 'deployed-jar.txt', fingerprint: true
                             sh """
-                                eval \\$(ssh-agent -s)
+                                eval \$(ssh-agent -s)
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
@@ -275,7 +275,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                             archiveArtifacts artifacts: 'deployed-image.txt', fingerprint: true
                             def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
                             sh """
-                                eval \\$(ssh-agent -s)
+                                eval \$(ssh-agent -s)
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
@@ -349,7 +349,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                                 def jarFile = sh(script: "ls artifacts/*.jar 2>/dev/null | head -1", returnStdout: true).trim()
                                 if (jarFile) {
                                     sh """
-                                        eval \\$(ssh-agent -s)
+                                        eval \$(ssh-agent -s)
                                         ssh-add \$SSH_KEY
                                         chmod +x ./jenkins/scripts/rollback.sh
                                         DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
@@ -373,7 +373,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                                 def prevImage = readFile('deployed-image.txt').trim()
                                 def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
                                 sh """
-                                    eval \\$(ssh-agent -s)
+                                    eval \$(ssh-agent -s)
                                     ssh-add \$SSH_KEY
                                     chmod +x ./jenkins/scripts/rollback.sh
                                     DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
