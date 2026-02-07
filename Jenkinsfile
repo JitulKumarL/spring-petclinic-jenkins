@@ -60,6 +60,11 @@ pipeline {
             choices: ['jar', 'docker'],
             description: 'jar=deploy JAR; docker=container'
         )
+        booleanParam(
+            name: 'SKIP_STOP_PROCESS',
+            defaultValue: false,
+            description: 'Skip stopping existing process (use for first deploy or manual test)'
+        )
     }
 
     stages {
@@ -261,7 +266,8 @@ pipeline {
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
-                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ./jenkins/scripts/deploy.sh \
+                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' SKIP_STOP_PROCESS='${params.SKIP_STOP_PROCESS ? '1' : '0'}' \
+                                ./jenkins/scripts/deploy.sh \
                                     --env ${deployEnv} \
                                     --jar ${jarPath} \
                                     --app ${APP_NAME} \

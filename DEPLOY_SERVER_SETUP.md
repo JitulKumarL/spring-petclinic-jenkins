@@ -242,6 +242,42 @@ Check: **Manage Jenkins** → **Plugins** → **Installed**
 
 ---
 
+## Manual deployment (verify before pipeline)
+
+Use this to test deployment using a stored artifact, without the pipeline's stop-process step.
+
+### Option 1: Pipeline with "Skip stop process"
+
+1. Run the pipeline build (Build Artifact + Store Artifact will run).
+2. When prompted, check **Skip stop process** (first deploy or manual test).
+3. Approve the Deploy step.
+4. The deploy will skip the pkill step that may fail over SSH.
+
+### Option 2: Run deploy script from Jenkins agent
+
+1. SSH to the Jenkins agent (e.g. `alma-agent-1`).
+2. Go to the workspace and use an artifact from a successful build:
+
+```bash
+cd /home/jenkins/workspace/Pet_Clinic_App_main
+# Or: copy JAR from Jenkins archive, e.g. after build #14:
+# cp /path/to/archived/petclinic-petclinic-14-02a7ddd.jar artifacts/
+
+# Add the Jenkins deploy key to agent
+eval $(ssh-agent -s)
+ssh-add /var/lib/jenkins/.ssh/deploy_key   # or use the credential's key
+
+# Deploy with --skip-stop (first deploy or no process running)
+DEPLOY_HOST=192.168.31.121 DEPLOY_USER=deploy REMOTE_APP_DIR=/home/deploy/petclinic \
+SKIP_STOP_PROCESS=1 ./jenkins/scripts/deploy.sh \
+  --env prod --jar artifacts/petclinic-petclinic-14-02a7ddd.jar \
+  --app petclinic --host 192.168.31.121 --user deploy --skip-stop
+```
+
+3. Check the app: `curl http://192.168.31.121:8080/actuator/health`
+
+---
+
 ## Troubleshooting
 
 | Problem | Check |

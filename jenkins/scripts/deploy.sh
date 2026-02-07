@@ -17,6 +17,7 @@ IMAGE=""
 JAR_PATH=""
 APP_NAME="petclinic"
 DEPLOY_METHOD="${DEPLOY_METHOD:-docker}"
+SKIP_STOP_PROCESS="${SKIP_STOP_PROCESS:-0}"
 DEPLOY_HOST="${DEPLOY_HOST:-}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 REMOTE_APP_DIR="${REMOTE_APP_DIR:-/home/deploy/petclinic}"
@@ -51,6 +52,10 @@ while [[ $# -gt 0 ]]; do
         --method)
             DEPLOY_METHOD="$2"
             shift 2
+            ;;
+        --skip-stop)
+            SKIP_STOP_PROCESS="1"
+            shift 1
             ;;
         *)
             echo "Unknown option: $1"
@@ -143,9 +148,12 @@ deploy_remote_jar() {
     run_cmd "mkdir -p ${REMOTE_APP_DIR}"
     echo "Step 2/5: Copying JAR to ${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_APP_DIR}/app.jar"
     copy_to_remote "$JAR_PATH" "${REMOTE_APP_DIR}/app.jar"
-    echo "Step 3/5: Stopping existing process (if any)"
-    # pgrep+kill avoids pkill exit-code quirks over SSH; fuser fallback; all exit codes ignored
-    run_cmd "(pid=\$(pgrep -f 'java.*app.jar' 2>/dev/null); [ -n \"\$pid\" ] && kill \$pid 2>/dev/null) || true; (fuser -k 8080/tcp 2>/dev/null) || true; sleep 2"
+    if [[ "${SKIP_STOP_PROCESS}" != "1" ]]; then
+        echo "Step 3/5: Stopping existing process (if any)"
+        run_cmd "(pid=\$(pgrep -f 'java.*app.jar' 2>/dev/null); [ -n \"\$pid\" ] && kill \$pid 2>/dev/null) || true; (fuser -k 8080/tcp 2>/dev/null) || true; sleep 2"
+    else
+        echo "Step 3/5: Skipped (--skip-stop)"
+    fi
     echo "Step 4/5: Starting application"
     run_cmd "cd ${REMOTE_APP_DIR} && nohup java -jar app.jar > app.log 2>&1 &"
     run_cmd "sleep 3"
