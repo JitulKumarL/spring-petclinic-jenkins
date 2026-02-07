@@ -8,4 +8,6 @@
 	<suppress files="build[\\/].*" checks=".*"/>
 	<suppress files="target[\\/].*" checks=".*"/>
 	<suppress files=".+\.(jar|git|ico|p12|gif|jks|jpg|svg|log)" checks="NoHttp"/>
+	<!-- Docs with example internal URLs (localhost, 192.168.x.x) for health checks -->
+	<suppress files=".*(SETUP_GUIDE|DEPLOY_SERVER_SETUP|TROUBLESHOOTING)\.md$" checks="NoHttp"/>
 </suppressions>
