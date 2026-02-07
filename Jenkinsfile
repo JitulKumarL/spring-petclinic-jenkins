@@ -84,17 +84,20 @@ pipeline {
                     // Per-environment config: host, user, credentials, port
                     // Single deploy VM at 192.168.31.121 (Alma Linux) — agent's SSH key must be in deploy server's authorized_keys
                     def envConfig = [
-                        test: [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        uat:  [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        stage:[host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        prod: [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        'test': [host: '192.168.31.124', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        'uat':  [host: '192.168.31.123', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        'stage':[host: '192.168.31.122', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        'prod': [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
                     ]
-                    def cfg = envConfig[env.DEPLOY_ENV] ?: envConfig.test
-                    env.DEPLOY_HOST = cfg.host ?: envConfig.test.host
-                    env.DEPLOY_USER = cfg.user ?: 'deploy'
-                    env.SSH_CREDENTIALS_ID = params.SSH_CREDENTIALS_ID ?: cfg.creds
-                    env.HEALTH_CHECK_URL = "http://${cfg.host}:${cfg.port}/actuator/health"
-                    env.REMOTE_APP_DIR = "/home/${cfg.user}/petclinic"
+                    def deployEnv = env.DEPLOY_ENV ?: 'test'
+                    def cfg = envConfig[deployEnv] ?: envConfig['test']
+                    env.DEPLOY_HOST = (cfg != null && cfg.host) ? cfg.host : '192.168.31.121'
+                    env.DEPLOY_USER = (cfg != null && cfg.user) ? cfg.user : 'deploy'
+                    env.SSH_CREDENTIALS_ID = (params.SSH_CREDENTIALS_ID ?: (cfg?.creds)) ?: 'deploy-ssh-key'
+                    def host = env.DEPLOY_HOST
+                    def port = (cfg != null && cfg.port) ? cfg.port : 8080
+                    env.HEALTH_CHECK_URL = "http://${host}:${port}/actuator/health"
+                    env.REMOTE_APP_DIR = "/home/${env.DEPLOY_USER}/petclinic"
                     echo "Branch: ${branchName} → Deploy to: ${env.DEPLOY_ENV} (${env.DEPLOY_HOST})"
                 }
             }
@@ -248,12 +251,15 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                     }
                     echo "=== Stage 8: Deploy to ${env.DEPLOY_HOST} (${env.DEPLOY_ENV}) ==="
                     def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
-                    sshagent(credentials: [deployCreds]) {
+                    // Uses withCredentials (built-in) instead of sshagent (requires SSH Agent plugin)
+                    withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
                         if (params.DEPLOY_METHOD == 'jar') {
                             def jarPath = "artifacts/${APP_NAME}-${env.BUILD_TAG}.jar"
                             writeFile file: 'deployed-jar.txt', text: jarPath
                             archiveArtifacts artifacts: 'deployed-jar.txt', fingerprint: true
                             sh """
+                                eval \\$(ssh-agent -s)
+                                ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ./jenkins/scripts/deploy.sh \
@@ -269,6 +275,8 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                             archiveArtifacts artifacts: 'deployed-image.txt', fingerprint: true
                             def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
                             sh """
+                                eval \\$(ssh-agent -s)
+                                ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
                                 REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \
@@ -331,7 +339,7 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                     if (previousBuild?.result == 'SUCCESS') {
                         def prevBuildNumber = previousBuild.number
                         def deployCreds = env.SSH_CREDENTIALS_ID ?: 'deploy-ssh-key'
-                        sshagent(credentials: [deployCreds]) {
+                        withCredentials([sshUserPrivateKey(credentialsId: deployCreds, keyFileVariable: 'SSH_KEY')]) {
                             if (params.DEPLOY_METHOD == 'jar') {
                                 step([$class: 'CopyArtifact',
                                     projectName: env.JOB_NAME,
@@ -341,14 +349,16 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                                 def jarFile = sh(script: "ls artifacts/*.jar 2>/dev/null | head -1", returnStdout: true).trim()
                                 if (jarFile) {
                                     sh """
+                                        eval \\$(ssh-agent -s)
+                                        ssh-add \$SSH_KEY
                                         chmod +x ./jenkins/scripts/rollback.sh
-                                        DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
-                                        REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ROLLBACK_JAR='${jarFile}' \
-                                        ./jenkins/scripts/rollback.sh \
-                                            --env ${env.DEPLOY_ENV} \
-                                            --build-number ${prevBuildNumber} \
-                                            --app ${APP_NAME} \
-                                            --host ${env.DEPLOY_HOST} \
+                                        DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
+                                        REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' ROLLBACK_JAR='${jarFile}' \\
+                                        ./jenkins/scripts/rollback.sh \\
+                                            --env ${env.DEPLOY_ENV} \\
+                                            --build-number ${prevBuildNumber} \\
+                                            --app ${APP_NAME} \\
+                                            --host ${env.DEPLOY_HOST} \\
                                             --user ${env.DEPLOY_USER}
                                     """
                                 } else {
@@ -363,14 +373,16 @@ ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]
                                 def prevImage = readFile('deployed-image.txt').trim()
                                 def useRegistry = params.PUSH_TO_REGISTRY ? 'true' : 'false'
                                 sh """
+                                    eval \\$(ssh-agent -s)
+                                    ssh-add \$SSH_KEY
                                     chmod +x ./jenkins/scripts/rollback.sh
-                                    DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \
-                                    REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \
-                                    ROLLBACK_IMAGE='${prevImage}' ./jenkins/scripts/rollback.sh \
-                                        --env ${env.DEPLOY_ENV} \
-                                        --build-number ${prevBuildNumber} \
-                                        --app ${APP_NAME} \
-                                        --host ${env.DEPLOY_HOST} \
+                                    DEPLOY_HOST='${env.DEPLOY_HOST}' DEPLOY_USER='${env.DEPLOY_USER}' \\
+                                    REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' USE_REGISTRY='${useRegistry}' \\
+                                    ROLLBACK_IMAGE='${prevImage}' ./jenkins/scripts/rollback.sh \\
+                                        --env ${env.DEPLOY_ENV} \\
+                                        --build-number ${prevBuildNumber} \\
+                                        --app ${APP_NAME} \\
+                                        --host ${env.DEPLOY_HOST} \\
                                         --user ${env.DEPLOY_USER}
                                 """
                             }
