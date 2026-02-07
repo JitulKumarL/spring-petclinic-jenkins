@@ -62,8 +62,8 @@ pipeline {
         )
         booleanParam(
             name: 'SKIP_STOP_PROCESS',
-            defaultValue: false,
-            description: 'Skip stopping existing process (use for first deploy or manual test)'
+            defaultValue: true,
+            description: 'Skip stopping existing process (pkill fails over SSH; uncheck to try stop before deploy)'
         )
     }
 
