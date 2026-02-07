@@ -82,15 +82,16 @@ pipeline {
                     env.DEPLOY_ENV = branchToEnv[branchName] ?: 'test'
 
                     // Per-environment config: host, user, credentials, port
+                    // Single deploy VM at 192.168.31.121 (Alma Linux) — agent's SSH key must be in deploy server's authorized_keys
                     def envConfig = [
                         test: [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        uat:  [host: '192.168.31.122', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        stage:[host: '192.168.31.123', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
-                        prod: [host: '192.168.31.124', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        uat:  [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        stage:[host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
+                        prod: [host: '192.168.31.121', user: 'deploy', creds: 'deploy-ssh-key', port: 8080],
                     ]
                     def cfg = envConfig[env.DEPLOY_ENV] ?: envConfig.test
-                    env.DEPLOY_HOST = cfg.host
-                    env.DEPLOY_USER = cfg.user
+                    env.DEPLOY_HOST = cfg.host ?: envConfig.test.host
+                    env.DEPLOY_USER = cfg.user ?: 'deploy'
                     env.SSH_CREDENTIALS_ID = params.SSH_CREDENTIALS_ID ?: cfg.creds
                     env.HEALTH_CHECK_URL = "http://${cfg.host}:${cfg.port}/actuator/health"
                     env.REMOTE_APP_DIR = "/home/${cfg.user}/petclinic"
@@ -105,6 +106,7 @@ pipeline {
                 script {
                     echo "=== Stage 1: Checkout ==="
                     checkout scm
+                    sh 'chmod +x mvnw'
                     env.GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     env.BUILD_TAG = "${APP_NAME}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
                 }
