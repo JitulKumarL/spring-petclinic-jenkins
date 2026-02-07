@@ -144,7 +144,7 @@ deploy_remote_jar() {
     echo "Step 2/5: Copying JAR to ${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_APP_DIR}/app.jar"
     copy_to_remote "$JAR_PATH" "${REMOTE_APP_DIR}/app.jar"
     echo "Step 3/5: Stopping existing process (if any)"
-    run_cmd "pkill -f 'java.*app.jar' 2>/dev/null || true"
+    run_cmd "pkill -f 'java.*app.jar' 2>/dev/null || :"
     run_cmd "sleep 2"
     echo "Step 4/5: Starting application"
     run_cmd "cd ${REMOTE_APP_DIR} && nohup java -jar app.jar > app.log 2>&1 &"
