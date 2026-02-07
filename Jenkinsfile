@@ -266,7 +266,7 @@ pipeline {
                                 ssh-add \$SSH_KEY
                                 chmod +x ./jenkins/scripts/deploy.sh
                                 DEPLOY_HOST='${host}' DEPLOY_USER='${env.DEPLOY_USER}' \
-                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' SKIP_STOP_PROCESS='${params.SKIP_STOP_PROCESS ? '1' : '0'}' \
+                                REMOTE_APP_DIR='${env.REMOTE_APP_DIR}' SKIP_STOP_PROCESS=1 \
                                 ./jenkins/scripts/deploy.sh \
                                     --env ${deployEnv} \
                                     --jar ${jarPath} \
